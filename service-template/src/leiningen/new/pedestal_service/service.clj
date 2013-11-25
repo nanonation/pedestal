@@ -7,7 +7,9 @@
 
 (defn about-page
   [request]
-  (ring-resp/response (format "Clojure %s" (clojure-version))))
+  (ring-resp/response (format "Clojure %s - served from %s"
+                              (clojure-version)
+                              (route/url-for ::about-page))))
 
 (defn home-page
   [request]
@@ -19,10 +21,8 @@
      ^:interceptors [(body-params/body-params) bootstrap/html-body]
      ["/about" {:get about-page}]]]])
 
-;; You can use this fn or a per-request fn via io.pedestal.service.http.route/url-for
-(def url-for (route/url-for-routes routes))
-
 ;; Consumed by {{namespace}}.server/create-server
+;; See bootstrap/default-interceptors for additional options you can configure
 (def service {:env :prod
               ;; You can bring your own non-default interceptors. Make
               ;; sure you include routing and set it up right for

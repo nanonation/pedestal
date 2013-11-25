@@ -247,10 +247,10 @@
   :params are added to :query-params. Returns updated opts."
   [opts route]
   (let [{:keys [params request]} opts]
-    (log/info :msg "MERGE-PARAM-OPTIONS"
-              :opts opts
-              :params params
-              :request request)
+    (log/debug :msg "MERGE-PARAM-OPTIONS"
+               :opts opts
+               :params params
+               :request request)
     (-> opts
         (dissoc :params)
         (update-in [:path-params] #(merge (:path-params request) params %))
@@ -278,39 +278,63 @@
 
 (defn- context-path
   [{:keys [context request] :as opts}]
-  (log/info :in :context-path
-            :context context
-            :context-type (type context)
-            :resolved-context (when (symbol? context) (resolve context))
-            :request request)
+  (log/debug :in :context-path
+             :context context
+             :context-type (type context)
+             :resolved-context (when (symbol? context) (resolve context))
+             :request request)
   (when-let [context-str (cond
-                       (string? context) context
-                       (fn? context) (context)
-                       (symbol? context) ((resolve context))
-                       :else (:context-path request))]
+                          (string? context) context
+                          (fn? context) (context)
+                          (symbol? context) ((resolve context))
+                          :else (:context-path request))]
     (str/split context-str #"/")))
 
+(def ^{:private true} standard-scheme->port {:http  80
+                                             :https 443})
+
+(defn- non-standard-port?
+  [scheme port]
+  (not= port (standard-scheme->port scheme)))
+
 (defn- link-str
-  "Returns a string for a route. opts is a map as described in the
+  "Returns a string for a route, providing the minimum URL necessary
+  given the route and opts. opts is a map as described in the
   docstring for 'url-for'."
   [route opts]
-  (let [{:keys [path-params query-params request fragment]} opts
+  (let [{:keys           [path-params
+                          query-params
+                          request
+                          fragment
+                          override
+                          absolute?]
+         override-host   :host
+         override-port   :port
+         override-scheme :scheme} opts
         {:keys [scheme host port path-parts]} route
         context-path-parts (context-path opts)
-        path-parts (do (log/info :in :link-str
-                                 :path-parts path-parts
-                                 :context-path-parts context-path-parts)
+        path-parts (do (log/debug :in :link-str
+                                  :path-parts path-parts
+                                  :context-path-parts context-path-parts)
                        (if (and context-path-parts (empty? (first path-parts)))
                          (concat context-path-parts (rest path-parts))
                          path-parts))
         path (str/join \/ (map #(get path-params % %) path-parts))
-        scheme-match (or (nil? scheme) (= scheme (:scheme request)))
-        host-match (or (nil? host) (= host (:server-name request)))
-        port-match (or (nil? port) (= port (:server-port request)))]
+        request-scheme (:scheme request)
+        request-host (:server-name request)
+        request-port (:server-port request)
+        scheme (or override-scheme scheme request-scheme)
+        host (or override-host host request-host)
+        port (or override-port port request-port)
+        scheme-mismatch (not= scheme request-scheme)
+        host-mismatch   (not= host   request-host)
+        port-mismatch   (not= port   request-port)]
     (str
-     (when-not scheme-match (str (name scheme) \:))
-     (when-not (and scheme-match host-match port-match)
-       (str "//" host (when port (str ":" port))))
+     (when (or absolute? scheme-mismatch host-mismatch port-mismatch)
+       (str (when (or absolute? scheme-mismatch) (str (name scheme) \:))
+            "//"
+            host
+            (when (non-standard-port? scheme port) (str \: port))))
      (str (when-not (.startsWith path "/") "/") path)
      (when-not (str/blank? fragment) (str "#" fragment))
      (when (seq query-params)
@@ -371,6 +395,11 @@
                     is nil.
 
       :fragment     A string for the fragment part of the url.
+
+      :override     A map of aspects of the matching route to override
+                    including any of: :scheme, :host, :port.
+
+      :absolute?    Boolean, whether or not to force an absolute URL
 
   In addition, you may supply default-options to the 'url-for-routes'
   function, which are merged with the options supplied to the returned

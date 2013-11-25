@@ -561,6 +561,18 @@
        data-routes
        syntax-quote-data-routes))
 
+(deftest view-user-link-on-non-standard-port
+  (are [routes] (= "http://example.com:8080/user/456"
+                   ((make-linker routes) ::view-user
+                    :app-name :public
+                    :params {:user-id 456}
+                    :absolute? true
+                    :request {:scheme :http :server-name "example.com" :server-port 8080}))
+       verbose-routes
+       terse-routes
+       data-routes
+       syntax-quote-data-routes))
+
 (deftest delete-user-link
   (are [routes] (= "https://admin.example.com:9999/user/456/delete"
                    ((make-linker routes) ::delete-user :app-name :admin :params {:user-id 456}))
@@ -624,6 +636,32 @@
        data-routes
        syntax-quote-data-routes))
 
+(deftest delete-user-link-with-overrides
+  (are [routes] (= "http://admin-staging.example.com:8080/user/456/delete"
+                   ((make-linker routes) ::delete-user
+                    :app-name :admin
+                    :params {:user-id 456}
+                    :scheme :http
+                    :host "admin-staging.example.com"
+                    :port 8080
+                    :request {:scheme :https :server-name "admin.example.com" :server-port 9999}))
+       verbose-routes
+       terse-routes
+       data-routes
+       syntax-quote-data-routes))
+
+(deftest delete-user-link-absolute
+  (are [routes] (= "https://admin.example.com:9999/user/456/delete"
+                   ((make-linker routes) ::delete-user
+                    :app-name :admin
+                    :params {:user-id 456}
+                    :request {:scheme :https :server-name "admin.example.com" :server-port 9999}
+                    :absolute? true))
+       verbose-routes
+       terse-routes
+       data-routes
+       syntax-quote-data-routes))
+
 (deftest delete-user-action-with-host
   (are [routes] (= {:action "/user/456/delete?_method=delete"
                     :method "post"}
@@ -639,6 +677,15 @@
 (deftest search-id-link
   (are [routes] (= "/search?id=456"
                    ((make-linker routes) ::search-id :params {:id 456}))
+       verbose-routes
+       terse-routes
+       data-routes
+       syntax-quote-data-routes))
+
+(deftest search-id-with-host
+  (are [routes] (= "/search?id=456"
+                   ((make-linker routes) ::search-id :params {:id 456}
+                    :request {:server-name "foo.com" :scheme :https}))
        verbose-routes
        terse-routes
        data-routes

@@ -59,6 +59,7 @@
 ;; interceptors
 
 (interceptor/defon-request log-request
+  "Log the request's method and uri."
   [request]
   (log/info :msg (format "%s %s"
                          (string/upper-case (name (:request-method request)))
@@ -82,6 +83,8 @@
     context))
 
 (interceptor/defon-response html-body
+  "Set the Content-Type header to \"text/html\" if the body is a string and a
+  type has not been set."
   [response]
   (let [body (:body response)
         content-type (get-in response [:headers "Content-Type"])]
@@ -90,6 +93,8 @@
       response)))
 
 (interceptor/defon-response json-body
+  "Set the Content-Type header to \"application/json\" and convert the body to
+  JSON if the body is a collection and a type has not been set."
   [response]
   (let [body (:body response)
         content-type (get-in response [:headers "Content-Type"])]
@@ -100,28 +105,53 @@
       response)))
 
 (defn default-interceptors
+  "Builds interceptors given an options map with keyword keys prefixed by namespace e.g.
+  :io.pedestal.service.http/routes or ::bootstrap/routes if the namespace is aliased to bootstrap.
+
+  Note:
+    No additional interceptors are added if :interceptors key is set.
+
+  Options:
+
+  * :routes: A seq of route maps that defines a service's routes. It's recommended to build this
+    using io.pedestal.service.http.route.definition/defroutes.
+  * :file-path: File path used as root by the middlewares/file interceptor. If nil, this interceptor
+    is not added. Default is nil.
+  * :resource-path: File path used as root by the middlewares/resource interceptor. If nil, this interceptor
+    is not added. Default is 'public'.
+  * :method-param-name: Query string parameter used to set the current HTTP verb. Default is _method.
+  * :allowed-origins: Determines what origins are allowed for the cors/allow-origin interceptor. If
+     nil, this interceptor is not added. Default is nil.
+  * :not-found-interceptor: Interceptor to use when returning a not found response. Default is
+     the not-found interceptor.
+  * :mime-types: Mime-types map used by the middlewares/content-type interceptor. Default is {}."
   [{routes ::routes
     file-path ::file-path
     resource-path ::resource-path
     method-param-name ::method-param-name
     allowed-origins ::allowed-origins
+    interceptors ::interceptors
+    not-found-interceptor ::not-found-interceptor
     ext-mime-types ::mime-types
     :or {file-path nil
          resource-path "public"
+         not-found-interceptor not-found
          method-param-name :_method
          ext-mime-types {}}
     :as service-map}]
-  (assoc service-map ::interceptors
-         (cond-> []
-                 true (conj log-request)
-                 (not (nil? allowed-origins)) (conj (cors/allow-origin allowed-origins))
-                 true (conj not-found)
-                 true (conj (middlewares/content-type {:mime-types ext-mime-types}))
-                 true (conj route/query-params)
-                 true (conj (route/method-param method-param-name))
-                 (not (nil? resource-path)) (conj (middlewares/resource resource-path))
-                 (not (nil? file-path)) (conj (middlewares/file file-path))
-                 true (conj (route/router routes)))))
+  (if (nil? interceptors)
+    (assoc service-map ::interceptors
+           (cond-> []
+                   true (conj log-request)
+                   (not (nil? allowed-origins)) (conj (cors/allow-origin allowed-origins))
+                   true (conj not-found-interceptor)
+                   true (conj (middlewares/content-type {:mime-types ext-mime-types}))
+                   true (conj route/query-params)
+                   true (conj (route/method-param method-param-name))
+                   (not (nil? resource-path)) (conj (middlewares/resource resource-path))
+                   (not (nil? file-path)) (conj (middlewares/file file-path))
+                   true (conj (route/router routes))))
+    service-map))
 
 (defn dev-interceptors
   [service-map]
@@ -143,12 +173,19 @@
          (servlet/servlet :service service-fn)))
 
 (defn create-servlet
-  [{interceptors ::interceptors
-    :as options}]
-  (cond-> options
-          (nil? interceptors) default-interceptors
-          true service-fn
-          true servlet))
+  "Creates a servlet given an options map with keyword keys prefixed by namespace e.g.
+  :io.pedestal.service.http/interceptors or ::bootstrap/interceptors if the namespace is aliased to bootstrap.
+
+  Options:
+
+  * :interceptors: A vector of interceptors that defines a service.
+
+  Note: Additional options are passed to default-interceptors if :interceptors is not set."
+  [options]
+  (-> options
+      default-interceptors
+      service-fn
+      servlet))
 
 (defn- service-map->server-options
   [service-map]

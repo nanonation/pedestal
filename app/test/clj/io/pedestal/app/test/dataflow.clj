@@ -28,18 +28,18 @@
   (is (not (matching-path? [:a :b] [:a :c])))
   (is (not (matching-path? [:* :b] [:* :c]))))
 
-(deftest test-descendent?
-  (is (descendent? [] []))
-  (is (descendent? [:a] []))
-  (is (descendent? [:a] [:a]))
-  (is (descendent? [:a :b] [:a]))
-  (is (descendent? [:a :b :c] [:a]))
-  (is (descendent? [:a :b :c] [:a :b]))
-  (is (descendent? [:a :* :c] [:a :b]))
-  (is (not (descendent? [:a] [:b])))
-  (is (not (descendent? [:a :b] [:a :c])))
-  (is (not (descendent? [:a :b :c] [:a :b :g])))
-  (is (not (descendent? [:a :* :c] [:a :b :g]))))
+(deftest test-descendant?
+  (is (descendant? [] []))
+  (is (descendant? [:a] []))
+  (is (descendant? [:a] [:a]))
+  (is (descendant? [:a :b] [:a]))
+  (is (descendant? [:a :b :c] [:a]))
+  (is (descendant? [:a :b :c] [:a :b]))
+  (is (descendant? [:a :* :c] [:a :b]))
+  (is (not (descendant? [:a] [:b])))
+  (is (not (descendant? [:a :b] [:a :c])))
+  (is (not (descendant? [:a :b :c] [:a :b :g])))
+  (is (not (descendant? [:a :* :c] [:a :b :g]))))
 
 (deftest test-topo-sort
   (let [graph {1 {:deps #{}}
@@ -53,7 +53,7 @@
            [1 2 3 4 6 5]))))
 
 (defn valid-sort? [seq]
-  (every? #(not (some (partial descendent? (:output %)) (:inputs %)))
+  (every? #(not (some (partial descendant? (:output %)) (:inputs %)))
           (:return (reduce (fn [a {f :fn ins :in out :out}]
                              {:inputs (concat (:inputs a) ins)
                               :return (conj (:return a) {:output out :inputs (:inputs a)})})
@@ -155,7 +155,9 @@
                 {:key :c :out [:d] :fn 'y}
                 {:key :g :out [:d :e :*] :fn 'z}
                 {:key :g :out [:d :e :**] :fn 'j}
-                {:key :* :out [:d :* :f] :fn 'i}]]
+                {:key :* :out [:d :* :f] :fn 'i}
+                {:key :* :out [:**] :fn 'k}
+                ]]
     (is (= (find-message-transformer config [:d] :c)
            'y))
     (is (= (find-message-transformer config [:d :e :f] :g)
@@ -163,7 +165,9 @@
     (is (= (find-message-transformer config [:d :e :f :g] :g)
            'j))
     (is (= (find-message-transformer config [:d :e :f] :z)
-           'i))))
+           'i))
+    (is (= (find-message-transformer config msg/app-model :z)
+           'k))))
 
 (deftest test-transform-phase
   (let [inc-fn (fn [o _] (inc o))
